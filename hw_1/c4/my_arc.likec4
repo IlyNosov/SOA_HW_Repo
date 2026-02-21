@@ -1,0 +1,108 @@
+specification {
+    element person
+    element system
+    element container
+    element database
+    element queue
+    
+    relationship sync {
+      line solid
+      color blue
+    }
+    relationship async {
+      line dotted
+      color green
+    }
+}
+
+model {
+    person buyer "Покупатель"
+    person seller "Продавец"
+    system paymentGateway "Платёжный шлюз"
+    system emailService "Email-сервис"
+    
+    // [МАРКЕТПЛЕЙС]
+    marketplace = system 'Маркетплейс' {
+        
+        // Единая точка входа
+        container apiGateway "API Gateway"
+        
+        // Микросервисы
+        container userService "User Service"
+        container catalogService "Catalog Service"
+        container orderService "Order Service"
+        container paymentService "Payment Service"
+        container notificationService "Notification Service"
+        container recommendationService "Recommendation Service"
+        
+        // Базы данных
+        database userDB "User DB"
+        database catalogDB "Catalog DB"
+        database orderDB "Order DB"
+        database paymentDB "Payment DB"
+        database notificationDB "Notification DB"
+        database recommendationDB "Recommendation DB"
+        
+        // Брокер
+        queue eventBroker "Event Broker"
+        
+        // [СВЯЗИ]
+        // Клиенты -> API Gateway
+        buyer -[sync]-> apiGateway
+        seller -[sync]-> apiGateway
+        
+        // API Gateway -> микросервисы
+        apiGateway -[sync]-> userService
+        apiGateway -[sync]-> catalogService
+        apiGateway -[sync]-> orderService
+        apiGateway -[sync]-> paymentService
+        apiGateway -[sync]-> notificationService
+        apiGateway -[sync]-> recommendationService
+        // Микросервисы -> БД
+        userService -[sync]-> userDB
+        catalogService -[sync]-> catalogDB
+        orderService -[sync]-> orderDB
+        paymentService -[sync]-> paymentDB
+        notificationService -[sync]-> notificationDB
+        recommendationService -[sync]-> recommendationDB
+        
+        // [СИНХРОННЫЕ ВЫЗОВЫ]
+        // Order -> Payment
+        orderService -[sync]-> paymentService "запрос на оплату"
+        paymentService -[sync]-> orderService "результат оплаты"
+        // Order -> Catalog
+        orderService -[sync]-> catalogService "запрос резерва"
+        catalogService -[sync]-> orderService "результат резерва"
+        
+        // [ДОМЕННЫЕ СОБЫТИЯ]
+        // События заказов
+        orderService -[async]-> eventBroker "Order Events"
+        // События платежей
+        paymentService -[async]-> eventBroker "Payment Events"
+        // События каталога
+        catalogService -[async]-> eventBroker "Catalog Events"
+        
+        // [ПОДПИСКИ]
+        
+        eventBroker -[async]-> notificationService "Order Events [уведомления]"
+        eventBroker -[async]-> notificationService "Payment Events [уведомления]"
+        eventBroker -[async]-> orderService "Payment Events [обновить статус]"
+        eventBroker -[async]-> catalogService "Order Events [восстановить остатки]"
+        eventBroker -[async]-> recommendationService "Catalog Events [обновить ленту]"
+        eventBroker -[async]-> recommendationService "Order Events [учесть в рекомендациях]"
+        
+        // [ВНЕШНИЕ СВЯЗИ]
+        paymentService -[sync]-> paymentGateway "выполнить транзакцию"
+        paymentGateway -[sync]-> paymentService "результат транзакции"
+        notificationService -[sync]-> emailService "отправить письмо"
+        emailService -[sync]-> notificationService "статус отправки"
+    }
+}
+
+views {
+    view containers of marketplace {
+        title "Маркетплейс — C4 Container"
+        include *
+        autoLayout TopBottom
+    }
+}
