@@ -69,7 +69,6 @@ model {
         // [СИНХРОННЫЕ ВЫЗОВЫ]
         // Order -> Payment
         orderService -[sync]-> paymentService "запрос на оплату"
-        paymentService -[sync]-> orderService "результат оплаты"
         // Order -> Catalog
         orderService -[sync]-> catalogService "запрос резерва"
         catalogService -[sync]-> orderService "результат резерва"
@@ -92,8 +91,8 @@ model {
         eventBroker -[async]-> recommendationService "Order Events [учесть в рекомендациях]"
         
         // [ВНЕШНИЕ СВЯЗИ]
-        paymentService -[sync]-> paymentGateway "выполнить транзакцию"
-        paymentGateway -[sync]-> paymentService "результат транзакции"
+        paymentService -[sync]-> paymentGateway "создать транзакцию"
+        paymentGateway -[async]-> paymentService "результат транзакции"
         notificationService -[sync]-> emailService "отправить письмо"
         emailService -[sync]-> notificationService "статус отправки"
     }
