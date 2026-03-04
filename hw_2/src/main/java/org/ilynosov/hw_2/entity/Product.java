@@ -38,7 +38,7 @@ public class Product {
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", insertable = false, updatable = false)
+    @Column(name = "updated_at", insertable = false)
     private OffsetDateTime updatedAt;
 
 }

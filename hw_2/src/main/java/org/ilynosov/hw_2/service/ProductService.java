@@ -108,6 +108,8 @@ public class ProductService {
         response.setCategory(product.getCategory());
         response.setStatus(product.getStatus());
         response.setStock(product.getStock());
+        response.setCreatedAt(product.getCreatedAt());
+        response.setUpdatedAt(product.getUpdatedAt());
 
         return response;
     }
