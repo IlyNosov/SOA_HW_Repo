@@ -35,7 +35,8 @@ public class ProductService {
         product.setStatus(request.getStatus());
         product.setStock(request.getStock());
 
-        return repository.save(product);
+        product = repository.save(product);
+        return repository.findById(product.getId()).orElseThrow();
     }
 
     public Product getById(UUID id) {

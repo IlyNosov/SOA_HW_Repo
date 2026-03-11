@@ -6,6 +6,7 @@ import org.ilynosov.hw_2.exception.BusinessException;
 import org.ilynosov.hw_2.model.OrderCreateRequest;
 import org.ilynosov.hw_2.model.ProductStatus;
 import org.ilynosov.hw_2.repository.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
@@ -27,7 +28,8 @@ public class OrderService {
     private final PromoCodeRepository promoCodeRepository;
     private final UserOperationRepository userOperationRepository;
 
-    private static final int ORDER_LIMIT_MINUTES = 1;
+    @Value("${app.order.limit-minutes}")
+    private int orderLimitMinutes;
 
     @Transactional
     public Order createOrder(UUID userId, OrderCreateRequest request) {
@@ -40,10 +42,10 @@ public class OrderService {
                 )
                 .ifPresent(op -> {
                     if (Duration.between(op.getCreatedAt(), Instant.now())
-                            .toMinutes() < ORDER_LIMIT_MINUTES) {
+                            .toMinutes() < orderLimitMinutes) {
                         throw new BusinessException(
                                 "ORDER_LIMIT_EXCEEDED",
-                                "Превышен лимит частоты создания или обновления заказа",
+                                "The order creation or update frequency limit has been exceeded",
                                 HttpStatus.TOO_MANY_REQUESTS
                         );
                     }
@@ -58,50 +60,79 @@ public class OrderService {
                 .ifPresent(o -> {
                     throw new BusinessException(
                             "ORDER_HAS_ACTIVE",
-                            "У пользователя уже есть активный заказ",
+                            "The user already has an active order",
                             HttpStatus.CONFLICT
                     );
                 });
 
-        // Проверка товаров + stock
-        Map<Product, Integer> productMap = new HashMap<>();
+
+        Map<UUID, Integer> quantityMap = new HashMap<>();
 
         for (var item : request.getItems()) {
+            quantityMap.merge(item.getProductId(), item.getQuantity(), Integer::sum);
+        }
+
+        Map<UUID, Product> productMap = new HashMap<>();
+
+        for (UUID productId : quantityMap.keySet()) {
 
             Product product = productRepository
-                    .findByIdForUpdate(item.getProductId())
+                    .findByIdForUpdate(productId)
                     .orElseThrow(() -> new BusinessException(
-                    "PRODUCT_NOT_FOUND",
-                    "Товар не найден",
-                    HttpStatus.NOT_FOUND)
-            );
+                            "PRODUCT_NOT_FOUND",
+                            "Product not found",
+                            HttpStatus.NOT_FOUND
+                    ));
 
-            // status у тебя String в entity
             if (product.getStatus() != ProductStatus.ACTIVE) {
                 throw new BusinessException(
                         "PRODUCT_INACTIVE",
-                        "Товар неактивен",
+                        "Product inactive",
                         HttpStatus.CONFLICT
                 );
             }
 
-            if (product.getStock() < item.getQuantity()) {
-                throw new BusinessException(
-                        "INSUFFICIENT_STOCK",
-                        "Недостаточно товара на складе",
-                        HttpStatus.CONFLICT
-                );
-            }
-
-            productMap.put(product, item.getQuantity());
+            productMap.put(productId, product);
         }
 
-        // Резервирование stock
-        productMap.forEach((product, qty) ->
-                product.setStock(product.getStock() - qty)
-        );
+        List<Map<String, Object>> shortages = new ArrayList<>();
 
-        productRepository.saveAll(productMap.keySet());
+        for (var entry : quantityMap.entrySet()) {
+
+            Product product = productMap.get(entry.getKey());
+            Integer requested = entry.getValue();
+
+            if (product.getStock() < requested) {
+
+                Map<String, Object> s = new HashMap<>();
+                s.put("product_id", product.getId());
+                s.put("requested", requested);
+                s.put("available", product.getStock());
+
+                shortages.add(s);
+            }
+        }
+
+        if (!shortages.isEmpty()) {
+
+            Map<String, Object> details = new HashMap<>();
+            details.put("shortages", shortages);
+
+            throw new BusinessException(
+                    "INSUFFICIENT_STOCK",
+                    "Insufficient stock",
+                    HttpStatus.CONFLICT,
+                    details
+            );
+        }
+
+        for (var entry : quantityMap.entrySet()) {
+
+            Product product = productMap.get(entry.getKey());
+            product.setStock(product.getStock() - entry.getValue());
+        }
+
+        productRepository.saveAll(productMap.values());
 
         // Создание заказа
         Order order = new Order();
@@ -114,9 +145,9 @@ public class OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
 
-        for (var entry : productMap.entrySet()) {
+        for (var entry : quantityMap.entrySet()) {
 
-            Product product = entry.getKey();
+            Product product = productMap.get(entry.getKey());
             Integer quantity = entry.getValue();
 
             OrderItem oi = new OrderItem();
@@ -143,7 +174,7 @@ public class OrderService {
                     .findByCode(request.getPromoCode())
                     .orElseThrow(() -> new BusinessException(
                             "PROMO_CODE_INVALID",
-                            "Промокод недействителен",
+                            "The promo code is invalid",
                             HttpStatus.UNPROCESSABLE_ENTITY)
                     );
 
@@ -153,7 +184,7 @@ public class OrderService {
                     || Instant.now().isAfter(pc.getValidUntil())) {
                 throw new BusinessException(
                         "PROMO_CODE_INVALID",
-                        "Промокод недействителен",
+                        "The promo code is invalid",
                         HttpStatus.UNPROCESSABLE_ENTITY
                 );
             }
@@ -170,22 +201,7 @@ public class OrderService {
                 );
             }
 
-            if (pc.getDiscountType() == DiscountType.PERCENTAGE) {
-
-                discount = total
-                        .multiply(pc.getDiscountValue())
-                        .divide(BigDecimal.valueOf(100));
-
-                BigDecimal maxDiscount = total.multiply(BigDecimal.valueOf(0.7));
-
-                if (discount.compareTo(maxDiscount) > 0) {
-                    discount = maxDiscount;
-                }
-
-            } else {
-
-                discount = pc.getDiscountValue().min(total);
-            }
+            discount = getBigDecimal(total, pc);
 
             pc.setCurrentUses(pc.getCurrentUses() + 1);
             promoCodeRepository.save(pc);
@@ -219,7 +235,7 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(
                         "ORDER_NOT_FOUND",
-                        "Заказ не найден",
+                        "Order not found",
                         HttpStatus.NOT_FOUND
                 ));
 
@@ -227,7 +243,7 @@ public class OrderService {
         if (!order.getUserId().equals(userId)) {
             throw new BusinessException(
                     "ORDER_OWNERSHIP_VIOLATION",
-                    "Заказ принадлежит другому пользователю",
+                    "The order belongs to another user",
                     HttpStatus.FORBIDDEN
             );
         }
@@ -238,7 +254,7 @@ public class OrderService {
 
             throw new BusinessException(
                     "INVALID_STATE_TRANSITION",
-                    "Нельзя отменить заказ в текущем статусе",
+                    "You cannot cancel an order in its current status.",
                     HttpStatus.CONFLICT
             );
         }
@@ -249,7 +265,7 @@ public class OrderService {
             Product product = productRepository.findByIdForUpdate(item.getProductId())
                     .orElseThrow(() -> new BusinessException(
                             "PRODUCT_NOT_FOUND",
-                            "Товар не найден",
+                            "Product not found",
                             HttpStatus.NOT_FOUND
                     ));
 
@@ -280,7 +296,7 @@ public class OrderService {
                 .ifPresent(op -> {
                     Duration diff = Duration.between(op.getCreatedAt(), OffsetDateTime.now());
 
-                    if (diff.toMinutes() < ORDER_LIMIT_MINUTES) {
+                    if (diff.toMinutes() < orderLimitMinutes) {
                         throw new BusinessException(
                                 "ORDER_LIMIT_EXCEEDED",
                                 "Order update rate limit exceeded",
@@ -292,14 +308,14 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(
                         "ORDER_NOT_FOUND",
-                        "Заказ не найден",
+                        "Order not found",
                         HttpStatus.NOT_FOUND
                 ));
 
         if (!order.getUserId().equals(userId)) {
             throw new BusinessException(
                     "ORDER_OWNERSHIP_VIOLATION",
-                    "Заказ принадлежит другому пользователю",
+                    "The order belongs to another user",
                     HttpStatus.FORBIDDEN
             );
         }
@@ -307,7 +323,7 @@ public class OrderService {
         if (order.getStatus() != OrderStatus.CREATED) {
             throw new BusinessException(
                     "INVALID_STATE_TRANSITION",
-                    "Можно обновлять только CREATED заказ",
+                    "You can only update the CREATED order",
                     HttpStatus.CONFLICT
             );
         }
@@ -334,14 +350,14 @@ public class OrderService {
             Product product = productRepository.findByIdForUpdate(item.getProductId())
                     .orElseThrow(() -> new BusinessException(
                             "PRODUCT_NOT_FOUND",
-                            "Товар не найден",
+                            "Product not found",
                             HttpStatus.NOT_FOUND
                     ));
 
             if (product.getStatus() != ProductStatus.ACTIVE) {
                 throw new BusinessException(
                         "PRODUCT_INACTIVE",
-                        "Товар не активен",
+                        "Product inactive",
                         HttpStatus.CONFLICT
                 );
             }
@@ -360,6 +376,7 @@ public class OrderService {
             product.setStock(product.getStock() - quantity);
 
             OrderItem orderItem = new OrderItem();
+            orderItem.setId(UUID.randomUUID());
             orderItem.setOrderId(orderId);
             orderItem.setProductId(product.getId());
             orderItem.setQuantity(item.getQuantity());
@@ -384,30 +401,50 @@ public class OrderService {
             );
         }
 
-        order.setTotalAmount(total);
+        BigDecimal discount = BigDecimal.ZERO;
 
         if (order.getPromoCodeId() != null) {
 
-            PromoCode promo = promoCodeRepository
-                    .findById(order.getPromoCodeId())
-                    .orElseThrow();
+            PromoCode promo = promoCodeRepository.findById(order.getPromoCodeId())
+                    .orElse(null);
 
-            BigDecimal minAmount = promo.getMinOrderAmount() != null
-                    ? promo.getMinOrderAmount()
-                    : BigDecimal.ZERO;
+            boolean promoValid = true;
 
-            // если заказ больше не подходит под промокод
-            if (total.compareTo(minAmount) < 0) {
+            if (promo == null) {
+                promoValid = false;
+            } else {
 
-                promo.setCurrentUses(Math.max(0, promo.getCurrentUses() - 1));
-                promoCodeRepository.save(promo);
+                Instant now = Instant.now();
+
+                if (!Boolean.TRUE.equals(promo.getActive())) promoValid = false;
+                if (promo.getCurrentUses() >= promo.getMaxUses()) promoValid = false;
+                if (now.isBefore(promo.getValidFrom())) promoValid = false;
+                if (now.isAfter(promo.getValidUntil())) promoValid = false;
+                if (total.compareTo(promo.getMinOrderAmount()) < 0) promoValid = false;
+            }
+
+            if (!promoValid) {
+
+                if (promo != null) {
+                    promo.setCurrentUses(Math.max(0, promo.getCurrentUses() - 1));
+                    promoCodeRepository.save(promo);
+                }
 
                 order.setPromoCodeId(null);
                 order.setDiscountAmount(BigDecimal.ZERO);
+
+            } else {
+
+                discount = getBigDecimal(total, promo);
+
+                order.setDiscountAmount(discount);
             }
         }
 
+        order.setTotalAmount(total.subtract(discount));
+
         UserOperation op = new UserOperation();
+        op.setId(UUID.randomUUID());
         op.setUserId(userId);
         op.setOperationType(OperationType.UPDATE_ORDER);
         op.setCreatedAt(OffsetDateTime.now().toInstant());
@@ -415,6 +452,26 @@ public class OrderService {
         userOperationRepository.save(op);
 
         return orderRepository.save(order);
+    }
+
+    private BigDecimal getBigDecimal(BigDecimal total, PromoCode promo) {
+        BigDecimal discount;
+        if (promo.getDiscountType() == DiscountType.PERCENTAGE) {
+
+            discount = total
+                    .multiply(promo.getDiscountValue())
+                    .divide(BigDecimal.valueOf(100));
+
+            BigDecimal maxDiscount = total.multiply(BigDecimal.valueOf(0.7));
+
+            if (discount.compareTo(maxDiscount) > 0) {
+                discount = maxDiscount;
+            }
+
+        } else {
+            discount = promo.getDiscountValue().min(total);
+        }
+        return discount;
     }
 
     @Transactional(readOnly = true)
