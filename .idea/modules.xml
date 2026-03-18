@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/SOA_HW_Repo.iml" filepath="$PROJECT_DIR$/.idea/SOA_HW_Repo.iml" />
+      <module fileurl="file://$PROJECT_DIR$/hw_3/flight-service-proto/flight-service-proto.iml" filepath="$PROJECT_DIR$/hw_3/flight-service-proto/flight-service-proto.iml" />
       <module fileurl="file://$PROJECT_DIR$/hw_2/hw_2.iml" filepath="$PROJECT_DIR$/hw_2/hw_2.iml" />
     </modules>
   </component>

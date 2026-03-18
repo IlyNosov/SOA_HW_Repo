@@ -1,0 +1,121 @@
+services:
+
+  # базы данных
+  booking-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - booking-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  flight-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: flight_db
+      POSTGRES_USER: flight
+      POSTGRES_PASSWORD: flight_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - flight-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flight -d flight_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Sentinel: мастер + реплика + sentinel
+  redis-master:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-replica:
+    image: redis:7-alpine
+    command: redis-server --replicaof redis-master 6379
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-sentinel:
+    image: redis:7-alpine
+    command: [ "sh", "-c", "echo -e 'port 26379\nsentinel resolve-hostnames yes\nsentinel monitor mymaster redis-master 6379 1\nsentinel down-after-milliseconds mymaster 5000\nsentinel failover-timeout mymaster 10000\nsentinel parallel-syncs mymaster 1' > /tmp/sentinel.conf && redis-sentinel /tmp/sentinel.conf" ]
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+    ports:
+      - "26379:26379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-p", "26379", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Flight Service
+  flight-service:
+    build:
+      context: .
+      dockerfile: flight-service/Dockerfile
+    ports:
+      - "9090:9090"
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://flight-db:5432/flight_db
+      SPRING_DATASOURCE_USERNAME: flight
+      SPRING_DATASOURCE_PASSWORD: flight_pass
+      SPRING_DATA_REDIS_SENTINEL_MASTER: mymaster
+      SPRING_DATA_REDIS_SENTINEL_NODES: redis-sentinel:26379
+      SERVER_PORT: 8081
+      GRPC_AUTH_API_KEY: super-secret-api-key-123
+      GRPC_CHAOS_ENABLED: "false" # для демонстрации retry
+    depends_on:
+      flight-db:
+        condition: service_healthy
+      redis-sentinel:
+        condition: service_healthy
+
+  # Booking Service
+  booking-service:
+    build:
+      context: .
+      dockerfile: booking-service/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://booking-db:5432/booking_db
+      SPRING_DATASOURCE_USERNAME: booking
+      SPRING_DATASOURCE_PASSWORD: booking_pass
+      FLIGHT_SERVICE_ADDRESS: flight-service:9090
+      SERVER_PORT: 8080
+      GRPC_AUTH_API_KEY: super-secret-api-key-123
+      CB_FAILURE_THRESHOLD: 5
+      CB_WAIT_DURATION_SECONDS: 15
+      CB_SLIDING_WINDOW_SIZE: 10
+    depends_on:
+      flight-service:
+        condition: service_started
+
+volumes:
+  booking-data:
+  flight-data:

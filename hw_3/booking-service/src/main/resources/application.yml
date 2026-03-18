@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: booking-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/booking_db
+    username: booking
+    password: booking_pass
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  grpc:
+    client:
+      channels:
+        flight-service:
+          address: static://${FLIGHT_SERVICE_ADDRESS:localhost:9090}
+
+grpc:
+  auth:
+    api-key: ${GRPC_AUTH_API_KEY:default-dev-key}
+
+circuit-breaker:
+  failure-threshold: ${CB_FAILURE_THRESHOLD:5}
+  wait-duration-seconds: ${CB_WAIT_DURATION_SECONDS:15}
+  sliding-window-size: ${CB_SLIDING_WINDOW_SIZE:10}
+
+logging:
+  level:
+    org.ilynosov.booking: DEBUG

@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package flightservice;
+
+option java_multiple_files = true;
+option java_package = "org.ilynosov.flight.grpc";
+option java_outer_classname = "FlightServiceProto";
+
+import "google/protobuf/timestamp.proto";
+
+// статусы рейса
+enum FlightStatus {
+    FLIGHT_STATUS_UNSPECIFIED = 0;
+    FLIGHT_STATUS_SCHEDULED   = 1;
+    FLIGHT_STATUS_DEPARTED    = 2;
+    FLIGHT_STATUS_CANCELLED   = 3;
+    FLIGHT_STATUS_COMPLETED   = 4;
+}
+
+// статусы резервации мест
+enum ReservationStatus {
+    RESERVATION_STATUS_UNSPECIFIED = 0;
+    RESERVATION_STATUS_ACTIVE     = 1;
+    RESERVATION_STATUS_RELEASED   = 2;
+    RESERVATION_STATUS_EXPIRED    = 3;
+}
+
+// информация о рейсе
+message FlightInfo {
+    int64                       id               = 1;
+    string                      flight_number    = 2;
+    string                      origin           = 3;  // IATA код аэропорта вылета
+    string                      destination      = 4;  // IATA код аэропорта прилета
+    google.protobuf.Timestamp   departure_time   = 5;
+    google.protobuf.Timestamp   arrival_time     = 6;
+    string                      airline          = 7;
+    int32                       total_seats      = 8;
+    int32                       available_seats  = 9;
+    string                      price            = 10; // decimal в виде строки чтобы не терять точность
+    FlightStatus                status           = 11;
+}
+
+// поиск рейсов
+message SearchFlightsRequest {
+    string origin      = 1; // обязательный, IATA код
+    string destination = 2; // обязательный, IATA код
+    string date        = 3; // опциональный, формат YYYY-MM-DD
+}
+
+message SearchFlightsResponse {
+    repeated FlightInfo flights = 1;
+}
+
+// получение рейса по id
+message GetFlightRequest {
+    int64 id = 1;
+}
+
+message GetFlightResponse {
+    FlightInfo flight = 1;
+}
+
+// резервирование мест
+message ReserveSeatsRequest {
+    int64  flight_id  = 1;
+    int32  seat_count = 2;
+    string booking_id = 3; // UUID из Booking Service, используется для идемпотентности
+}
+
+message ReserveSeatsResponse {
+    int64              reservation_id = 1;
+    ReservationStatus  status         = 2;
+}
+
+// отмена резервации
+message ReleaseReservationRequest {
+    string booking_id = 1; // поиск резервации по booking_id
+}
+
+message ReleaseReservationResponse {
+    bool released = 1;
+}
+
+// gRPC сервис для управления рейсами и резервациями
+service FlightService {
+    // поиск рейсов по маршруту и опциональной дате, возвращает только SCHEDULED
+    rpc SearchFlights (SearchFlightsRequest) returns (SearchFlightsResponse);
+
+    // получение информации о рейсе по ID, вернет NOT_FOUND если не найден
+    rpc GetFlight (GetFlightRequest) returns (GetFlightResponse);
+
+    // атомарное резервирование мест на рейсе
+    // вернет RESOURCE_EXHAUSTED если мест недостаточно
+    // идемпотентный: повторный вызов с тем же booking_id вернет существующую резервацию
+    rpc ReserveSeats (ReserveSeatsRequest) returns (ReserveSeatsResponse);
+
+    // отмена резервации по booking_id, места возвращаются в пул
+    // вернет NOT_FOUND если активной резервации нет
+    rpc ReleaseReservation (ReleaseReservationRequest) returns (ReleaseReservationResponse);
+}

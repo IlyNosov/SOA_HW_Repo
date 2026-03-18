@@ -1,0 +1,41 @@
+erDiagram
+  flights ||--o{ seat_reservations : "has"
+  flights ||--o{ bookings : "referenced by"
+  seat_reservations ||--|| bookings : "one-to-one"
+
+  flights {
+    BIGSERIAL id PK
+    VARCHAR flight_number "NOT NULL"
+    VARCHAR airline "NOT NULL"
+    VARCHAR origin "NOT NULL, IATA 3"
+    VARCHAR destination "NOT NULL, IATA 3"
+    TIMESTAMP departure_time "NOT NULL"
+    TIMESTAMP arrival_time "NOT NULL"
+    INT total_seats "NOT NULL, >0"
+    INT available_seats "NOT NULL, >=0"
+    DECIMAL price "NOT NULL, >0"
+    VARCHAR status "SCHEDULED|DEPARTED|CANCELLED|COMPLETED"
+  }
+
+  seat_reservations {
+    BIGSERIAL id PK
+    BIGINT flight_id FK
+    VARCHAR booking_id UK "UUID, unique"
+    INT seat_count "NOT NULL, >0"
+    VARCHAR status "ACTIVE|RELEASED|EXPIRED"
+    TIMESTAMP created_at "DEFAULT NOW()"
+    TIMESTAMP updated_at "DEFAULT NOW()"
+  }
+
+  bookings {
+    UUID id PK
+    VARCHAR user_id "NOT NULL"
+    BIGINT flight_id "NOT NULL"
+    VARCHAR passenger_name "NOT NULL"
+    VARCHAR passenger_email "NOT NULL"
+    INT seat_count "NOT NULL, >0"
+    DECIMAL total_price "NOT NULL, >0"
+    VARCHAR status "CONFIRMED|CANCELLED"
+    TIMESTAMP created_at "DEFAULT NOW()"
+    TIMESTAMP updated_at "DEFAULT NOW()"
+  }
