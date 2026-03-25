@@ -1,5 +1,8 @@
 server:
   port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
@@ -20,6 +23,7 @@ spring:
       channels:
         flight-service:
           address: static://${FLIGHT_SERVICE_ADDRESS:localhost:9090}
+
 
 grpc:
   auth:
