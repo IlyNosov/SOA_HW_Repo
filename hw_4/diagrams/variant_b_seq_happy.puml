@@ -1,0 +1,29 @@
+@startuml variant_b_seq_happy
+title Вариант B - основной сценарий (push доставлен)
+
+participant "Payment\nService" as PS
+participant "Orchestrator" as ORC
+participant "Saga DB" as SDB
+participant "RabbitMQ" as MQ
+participant "Push\nWorker" as PW
+participant "FCM" as FCM
+participant "Пользователь" as U
+
+PS -> ORC : POST /notifications\n{ event, user_id, idempotency_key }
+ORC -> SDB : INSERT saga(status = STARTED, step = PUSH)
+ORC --> PS : 202 Accepted
+
+ORC -> MQ : Enqueue push_task(saga_id)
+MQ --> PW : push_task
+PW -> FCM : POST /fcm/send
+FCM --> PW : 200 OK (message_id)
+PW -> ORC : callback(saga_id, step = PUSH, result = SENT)
+ORC -> SDB : UPDATE step = AWAITING_PUSH_RECEIPT\ntimeout = now + 5s
+
+FCM -> U : Push notification
+FCM -> ORC : POST /webhook\n{ status: delivered, message_id }
+ORC -> SDB : UPDATE status = COMPLETED
+
+note over U : P99 <= 3 сек от события
+
+@enduml

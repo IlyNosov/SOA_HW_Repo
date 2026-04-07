@@ -1,0 +1,40 @@
+@startuml variant_a_seq_failover
+title Вариант A - failover сценарий (push упал, SMS доставлено)
+
+participant "Kafka" as K
+participant "Delivery\nEngine" as DE
+participant "Delivery DB" as DDB
+participant "Push\nAdapter" as PA
+participant "FCM" as FCM
+participant "SMS\nAdapter" as SA
+participant "SMS\nПровайдер" as SMS
+participant "Пользователь" as U
+
+K --> DE : Consume(txn.notifications)
+DE -> DDB : INSERT delivery(status = PENDING)
+
+DE -> PA : Send push(device_token, payload)
+PA -> FCM : POST /fcm/send
+FCM --> PA : 503 Service Unavailable
+
+note over PA : circuit breaker\nпереходит в OPEN
+
+PA --> DE : error
+DE -> DDB : UPDATE status = PUSH_FAILED
+
+DE -> DDB : UPDATE status = FAILOVER_SMS
+
+DE -> SA : Send SMS(phone, text)
+SA -> SMS : POST /sms/send (провайдер 1)
+SMS --> SA : 200 OK (sms_id)
+SA --> DE : accepted
+
+note over DE : Ожидание receipt\n(таймаут 25 сек)
+
+SMS -> U : SMS
+SMS -> DE : POST /webhook\n{ status: delivered, sms_id }
+DE -> DDB : UPDATE status = DELIVERED
+
+note over U : P99 <= 30 сек от события
+
+@enduml

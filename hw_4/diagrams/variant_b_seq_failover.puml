@@ -1,0 +1,32 @@
+@startuml variant_b_seq_failover
+title Вариант B - failover сценарий (push не получил receipt, SMS доставлено)
+
+participant "Scheduler" as SCH
+participant "Orchestrator" as ORC
+participant "Saga DB" as SDB
+participant "RabbitMQ" as MQ
+participant "SMS\nWorker" as SW
+participant "SMS\nПровайдер" as SMS
+participant "Пользователь" as U
+
+note over SCH : Таймаут receipt истек (5 сек)\nreceipt от FCM не пришел
+
+SCH -> ORC : timeout(saga_id, step = PUSH)
+ORC -> SDB : SELECT saga FOR UPDATE\n-- проверяем что ещё не COMPLETED
+SDB --> ORC : saga { status = AWAITING_PUSH_RECEIPT }
+ORC -> SDB : UPDATE step = SMS, status = FAILOVER
+
+ORC -> MQ : Enqueue sms_task(saga_id)
+MQ --> SW : sms_task
+SW -> SMS : POST /sms/send
+SMS --> SW : 200 OK (sms_id)
+SW -> ORC : callback(saga_id, step = SMS, result = SENT)
+ORC -> SDB : UPDATE step = AWAITING_SMS_RECEIPT\ntimeout = now + 25s
+
+SMS -> U : SMS
+SMS -> ORC : POST /webhook\n{ status: delivered, sms_id }
+ORC -> SDB : UPDATE status = COMPLETED
+
+note over U : P99 <= 30 сек от события
+
+@enduml

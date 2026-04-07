@@ -1,0 +1,43 @@
+@startuml variant_a_c4
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "Пользователь", "Клиент банка")
+
+System_Boundary(bank, "Онлайн-банк") {
+    Container(payment_svc, "Payment Service", "Java/Spring", "Обрабатывает переводы и платежи")
+    ContainerDb(payment_db, "Payment DB + Outbox", "PostgreSQL", "Транзакции + outbox table")
+    Container(outbox_poller, "Outbox Poller", "Debezium CDC", "Читает outbox, публикует в Kafka")
+    Container(broker, "Kafka", "Apache Kafka", "Топики: txn.notifications, svc.notifications, mkt.notifications")
+    Container(delivery_engine, "Delivery Engine", "Go", "Воркеры по типам, state machine доставки, circuit breakers")
+    ContainerDb(delivery_db, "Delivery DB", "PostgreSQL", "Статусы доставки, idempotency keys")
+    Container(push_adapter, "Push Adapter", "Go", "FCM / APNs интеграция")
+    Container(sms_adapter, "SMS Adapter", "Go", "Провайдер 1 + Провайдер 2, round-robin")
+    Container(email_adapter, "Email Adapter", "Go", "SendGrid интеграция")
+    Container(preference_svc, "Preference Service", "Go", "Настройки пользователя по каналам")
+    Container(observability, "Observability", "Prometheus + Grafana + Jaeger", "Метрики, алерты, трейсинг")
+}
+
+System_Ext(fcm, "FCM / APNs", "Google / Apple")
+System_Ext(sms_provider, "SMS Провайдер", "МТС / Beeline")
+System_Ext(email_provider, "Email Провайдер", "SendGrid")
+
+Rel(user, payment_svc, "Инициирует перевод", "HTTPS")
+Rel(payment_svc, payment_db, "Атомарная запись транзакции + outbox", "SQL")
+Rel(outbox_poller, payment_db, "CDC polling", "SQL / CDC")
+Rel(outbox_poller, broker, "Публикует событие", "Kafka Producer")
+Rel(broker, delivery_engine, "Потребляет события", "Kafka Consumer")
+Rel(delivery_engine, delivery_db, "Читает / пишет статусы", "SQL")
+Rel(delivery_engine, preference_svc, "Проверяет настройки пользователя", "gRPC")
+Rel(delivery_engine, push_adapter, "Отправить push", "gRPC")
+Rel(delivery_engine, sms_adapter, "Отправить SMS", "gRPC")
+Rel(delivery_engine, email_adapter, "Отправить email", "gRPC")
+Rel(push_adapter, fcm, "Push notification", "HTTPS")
+Rel(sms_adapter, sms_provider, "SMS", "HTTPS / SMPP")
+Rel(email_adapter, email_provider, "Email", "SMTP")
+Rel(fcm, delivery_engine, "Delivery receipt", "HTTPS webhook")
+Rel(sms_provider, delivery_engine, "Delivery receipt", "HTTPS webhook")
+Rel(delivery_engine, observability, "Метрики и трейсы", "Prometheus / OTLP")
+
+@enduml

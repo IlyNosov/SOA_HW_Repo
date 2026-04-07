@@ -1,0 +1,43 @@
+@startuml variant_b_c4
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+Person(user, "Пользователь", "Клиент банка")
+
+System_Boundary(bank, "Онлайн-банк") {
+    Container(payment_svc, "Payment Service", "Java/Spring", "Обрабатывает переводы")
+    Container(orchestrator, "Notification Orchestrator", "Java/Spring", "Управляет сагой доставки, хранит состояние, принимает решения о failover")
+    ContainerDb(saga_db, "Saga DB", "PostgreSQL", "Состояния саг, idempotency keys")
+    Container(scheduler, "Delivery Scheduler", "Quartz / Go", "Отслеживает таймауты, инициирует failover")
+    Container(mq, "RabbitMQ", "RabbitMQ", "Priority queues по типам уведомлений")
+    Container(push_worker, "Push Worker", "Go", "FCM / APNs интеграция")
+    Container(sms_worker, "SMS Worker", "Go", "SMS провайдеры с failover")
+    Container(email_worker, "Email Worker", "Go", "Email провайдер")
+    Container(preference_svc, "Preference Service", "Go", "Настройки пользователя по каналам")
+    Container(observability, "Observability", "Prometheus + Grafana + OpenTelemetry", "Метрики, алерты, трейсинг")
+}
+
+System_Ext(fcm, "FCM / APNs", "Google / Apple")
+System_Ext(sms_provider, "SMS Провайдер", "МТС / Beeline")
+System_Ext(email_provider, "Email Провайдер", "SendGrid")
+
+Rel(user, payment_svc, "Инициирует перевод", "HTTPS")
+Rel(payment_svc, orchestrator, "POST /notifications", "gRPC")
+Rel(orchestrator, saga_db, "Читает / пишет состояние саги", "SQL")
+Rel(orchestrator, preference_svc, "Настройки пользователя", "gRPC")
+Rel(orchestrator, mq, "Ставит задачу в очередь", "AMQP")
+Rel(scheduler, saga_db, "Проверяет таймауты", "SQL")
+Rel(scheduler, orchestrator, "Callback: timeout expired", "gRPC")
+Rel(mq, push_worker, "push_task", "AMQP")
+Rel(mq, sms_worker, "sms_task", "AMQP")
+Rel(mq, email_worker, "email_task", "AMQP")
+Rel(push_worker, fcm, "Push notification", "HTTPS")
+Rel(sms_worker, sms_provider, "SMS", "HTTPS / SMPP")
+Rel(email_worker, email_provider, "Email", "SMTP")
+Rel(fcm, orchestrator, "Delivery receipt", "HTTPS webhook")
+Rel(sms_provider, orchestrator, "Delivery receipt", "HTTPS webhook")
+Rel(push_worker, orchestrator, "Результат отправки", "gRPC callback")
+Rel(orchestrator, observability, "Метрики и трейсы", "Prometheus / OTLP")
+
+@enduml

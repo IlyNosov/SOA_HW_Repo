@@ -1,0 +1,37 @@
+@startuml variant_a_seq_happy
+title Вариант A - основной сценарий (push доставлен)
+
+participant "Payment\nService" as PS
+participant "Payment DB\n+ Outbox" as DB
+participant "Outbox\nPoller" as OP
+participant "Kafka" as K
+participant "Delivery\nEngine" as DE
+participant "Delivery DB" as DDB
+participant "Push\nAdapter" as PA
+participant "FCM" as FCM
+participant "Пользователь" as U
+
+PS -> DB : BEGIN TXN\nINSERT payment\nINSERT outbox(event)\nCOMMIT
+
+OP -> DB : SELECT new outbox rows (polling / CDC)
+DB --> OP : [notification_event]
+OP -> K : Produce(txn.notifications, event)
+OP -> DB : UPDATE outbox SET published = true
+
+K --> DE : Consume(txn.notifications)
+DE -> DDB : INSERT delivery(id, status=PENDING, idempotency_key)
+DE -> DE : SELECT user preferences
+DE -> PA : Send push(device_token, payload)
+PA -> FCM : POST /fcm/send
+FCM --> PA : 200 OK (message_id)
+PA --> DE : accepted
+
+note over DE : Ожидание receipt\n(таймаут 5 сек)
+
+FCM -> U : Push notification
+FCM -> DE : POST /webhook\n{ status: delivered, message_id }
+DE -> DDB : UPDATE delivery SET status = DELIVERED
+
+note over U : P99 <= 3 сек от события
+
+@enduml

@@ -1,0 +1,34 @@
+@startuml variant_a_state
+title Delivery State Machine - Вариант A
+
+[*] --> PENDING : событие получено
+
+PENDING --> SENDING_PUSH : начало обработки
+
+SENDING_PUSH --> DELIVERED : receipt OK
+SENDING_PUSH --> PUSH_FAILED : timeout или ошибка провайдера
+
+PUSH_FAILED --> SENDING_SMS : failover
+
+SENDING_SMS --> DELIVERED : receipt OK
+SENDING_SMS --> SMS_FAILED : timeout или ошибка провайдера
+
+SMS_FAILED --> SENDING_EMAIL : failover
+
+SENDING_EMAIL --> DELIVERED : receipt OK
+SENDING_EMAIL --> DLQ : ошибка провайдера
+
+DELIVERED --> [*]
+DLQ --> [*] : алерт + manual review
+
+note right of PUSH_FAILED
+  circuit breaker FCM/APNs
+  переходит в OPEN
+end note
+
+note right of DLQ
+  все каналы исчерпаны,
+  инженер получает алерт
+end note
+
+@enduml
