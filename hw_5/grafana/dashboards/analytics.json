@@ -1,0 +1,130 @@
+{
+  "title": "Online Cinema Analytics",
+  "uid": "cinema-analytics",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-7d", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Retention Cohort Heatmap",
+      "type": "table",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+      "options": {
+        "cellHeight": "sm",
+        "footer": {"show": false}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"displayMode": "color-background"},
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {"color": "red", "value": 0},
+              {"color": "yellow", "value": 20},
+              {"color": "green", "value": 50}
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+          "rawSql": "SELECT cohort_date, day_number, round(retention_pct * 100, 1) AS retention_pct FROM retention_cohorts FINAL ORDER BY cohort_date DESC, day_number ASC",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Daily Active Users (DAU)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10}
+        }
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+          "rawSql": "SELECT date, metric_value AS DAU FROM daily_aggregates FINAL WHERE metric_name = 'dau' ORDER BY date",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "View Conversion Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10},
+          "min": 0,
+          "max": 1
+        }
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+          "rawSql": "SELECT date, metric_value AS conversion FROM daily_aggregates FINAL WHERE metric_name = 'view_conversion' ORDER BY date",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Average View Time (seconds)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 18},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 2, "fillOpacity": 10}
+        }
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+          "rawSql": "SELECT date, metric_value AS avg_view_time FROM daily_aggregates FINAL WHERE metric_name = 'avg_view_time_seconds' ORDER BY date",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Top 10 Movies by Views",
+      "type": "barchart",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 18},
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "targets": [
+        {
+          "datasource": {"type": "grafana-clickhouse-datasource", "uid": "clickhouse-main"},
+          "rawSql": "SELECT movie_id, uniq(user_id) AS viewers FROM movie_events WHERE date >= today() - 7 AND event_type = 'VIEW_STARTED' GROUP BY movie_id ORDER BY viewers DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

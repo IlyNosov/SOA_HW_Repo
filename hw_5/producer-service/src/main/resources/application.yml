@@ -1,0 +1,22 @@
+server:
+  port: 8080
+
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+schema-registry:
+  url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+
+generator:
+  enabled: ${GENERATOR_ENABLED:true}
+  interval-ms: ${GENERATOR_INTERVAL_MS:3000}
+
+spring:
+  application:
+    name: producer-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
