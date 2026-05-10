@@ -1,0 +1,41 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: hw6-consumer-service
+  kafka:
+    bootstrap-servers: localhost:29092
+    consumer:
+      group-id: warehouse-state-consumer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
+      properties:
+        schema.registry.url: ${app.schema-registry-url}
+        specific.avro.reader: false
+    listener:
+      ack-mode: manual
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+app:
+  schema-registry-url: http://localhost:8081
+  cassandra:
+    contact-points: localhost:9042
+    local-datacenter: datacenter1
+    keyspace: warehouse
+    migrations:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
