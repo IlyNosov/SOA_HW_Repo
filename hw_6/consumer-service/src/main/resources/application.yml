@@ -31,8 +31,14 @@ app:
       enabled: true
 
 management:
+  metrics:
+    tags:
+      application: ${spring.application.name}
   endpoints:
     web:
+      base-path: /
+      path-mapping:
+        prometheus: metrics
       exposure:
         include: health,info,prometheus
   endpoint:

@@ -1,0 +1,17 @@
+{
+  "type": "record",
+  "name": "WarehouseEvent",
+  "namespace": "org.ilynosov.hw6.avro",
+  "fields": [
+    { "name": "event_id", "type": "string" },
+    { "name": "event_type", "type": "string" },
+    { "name": "product_id", "type": ["null", "string"], "default": null },
+    { "name": "zone_id", "type": ["null", "string"], "default": null },
+    { "name": "from_zone_id", "type": ["null", "string"], "default": null },
+    { "name": "to_zone_id", "type": ["null", "string"], "default": null },
+    { "name": "order_id", "type": ["null", "string"], "default": null },
+    { "name": "quantity", "type": ["null", "int"], "default": null },
+    { "name": "order_items_json", "type": ["null", "string"], "default": null },
+    { "name": "event_timestamp", "type": "string" }
+  ]
+}
